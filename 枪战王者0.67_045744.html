@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>枪战王者 0.67</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden;
+            background: #1a1a1a;
+            touch-action: none;
+        }
+        #gameArea {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #player {
+            width: 8vmin;
+            height: 8vmin;
+            position: absolute;
+            background: #00f;
+            border-radius: 50%;
+            transition: transform 0.1s;
+        }
+        .bullet {
+            width: 2vmin;
+            height: 2vmin;
+            background: yellow;
+            position: absolute;
+            border-radius: 50%;
+        }
+        .enemy {
+            width: 8vmin;
+            height: 8vmin;
+            position: absolute;
+            background: red;
+            border-radius: 50%;
+            transition: top 0.3s linear;
+        }
+        #hud {
+            position: fixed;
+            top: 2vmin;
+            left: 2vmin;
+            color: white;
+            font-family: Arial;
+            font-size: 4vmin;
+            text-shadow: 1px 1px 2px black;
+        }
+        #joystick {
+            position: fixed;
+            bottom: 15vmin;
+            left: 15vmin;
+            width: 20vmin;
+            height: 20vmin;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            touch-action: none;
+        }
+        #fireBtn {
+            position: fixed;
+            bottom: 15vmin;
+            right: 15vmin;
+            width: 15vmin;
+            height: 15vmin;
+            background: rgba(255,0,0,0.3);
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.5);
+        }
+        /* 加载界面 */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 8vmin;
+            z-index: 999;
+        }
+        /* 紫色广告 */
+        #ad {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            width: 80px;
+            height: 80px;
+            background: #9b59b6;
+            border: 2px solid #8e44ad;
+            border-radius: 10px;
+            animation: pulse 2s infinite;
+            display: none;
+            z-index: 1000;
+            color: white;
+            text-align: center;
+            line-height: 80px;
+            font-size: 14px;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">加载中...</div>
+    <div id="ad">推荐角色</div>
+    <div id="hud">
+        HP: <span id="health">100</span> | 
+        SCORE: <span id="score">0</span>
+    </div>
+    <div id="gameArea">
+        <div id="player"></div>
+        <div id="joystick"></div>
+        <div id="fireBtn"></div>
+    </div>
+
+<script>
+// 游戏核心变量
+const player = document.getElementById('player');
+const gameArea = document.getElementById('gameArea');
+let posX = 50, posY = 50; // 百分比位置
+let bullets = [];
+let enemies = [];
+let score = 0;
+let health = 100;
+let isTouching = false;
+
+// 虚拟摇杆逻辑
+const joystick = document.getElementById('joystick');
+let joystickVector = {x:0, y:0};
+
+joystick.addEventListener('touchstart', handleTouch);
+document.addEventListener('touchmove', handleTouch);
+document.addEventListener('touchend', () => {
+    joystickVector = {x:0, y:0};
+    isTouching = false;
+});
+
+function handleTouch(e) {
+    e.preventDefault();
+    const rect = joystick.getBoundingClientRect();
+    const centerX = rect.left + rect.width/2;
+    const centerY = rect.top + rect.height/2;
+    const touch = e.touches[0];
+    
+    const dx = touch.clientX - centerX;
+    const dy = touch.clientY - centerY;
+    const distance = Math.sqrt(dx*dx + dy*dy);
+    const maxDist = rect.width/2;
+    
+    joystickVector.x = Math.min(1, Math.max(-1, dx/maxDist));
+    joystickVector.y = Math.min(1, Math.max(-1, dy/maxDist));
+    isTouching = true;
+}
+
+// 射击按钮
+document.getElementById('fireBtn').addEventListener('touchstart', shoot);
+
+function updatePlayer() {
+    player.style.left = `calc(${posX}% - 4vmin)`;
+    player.style.top = `calc(${posY}% - 4vmin)`;
+}
+
+function shoot() {
+    createBullet(posX, posY, -Math.PI/2);
+}
+
+function createBullet(x, y, angle) {
+    const bullet = document.createElement('div');
+    bullet.className = 'bullet';
+    bullet.style.left = `calc(${x}% - 1vmin)`;
+    bullet.style.top = `calc(${y}% - 1vmin)`;
+    gameArea.appendChild(bullet);
+    bullets.push({ element:bullet, x, y, angle });
+}
+
+function spawnEnemy() {
+    const enemy = document.createElement('div');
+    enemy.className = 'enemy';
+    enemy.style.left = Math.random()*80 + 10 + '%';
+    enemy.style.top = '-8vmin';
+    gameArea.appendChild(enemy);
+    enemies.push({
+        element: enemy,
+        x: parseFloat(enemy.style.left),
+        y: 0,
+        speed: 0.3 + Math.random()*0.7,
+        health: 1
+    });
+}
+
+// 游戏主循环
+function gameLoop() {
+    // 玩家移动
+    if(isTouching) {
+        posX = Math.max(5, Math.min(95, posX + joystickVector.x*2));
+        posY = Math.max(5, Math.min(95, posY + joystickVector.y*2));
+        updatePlayer();
+    }
+
+    // 子弹运动
+    bullets.forEach((bullet, index) => {
+        bullet.x += Math.cos(bullet.angle)*2;
+        bullet.y += Math.sin(bullet.angle)*2;
+        bullet.element.style.left = `calc(${bullet.x}% - 1vmin)`;
+        bullet.element.style.top = `calc(${bullet.y}% - 1vmin)`;
+
+        if(bullet.x < 0 || bullet.x > 100 || bullet.y < 0 || bullet.y > 100) {
+            bullet.element.remove();
+            bullets.splice(index, 1);
+        }
+    });
+
+    // 敌人运动
+    enemies.forEach((enemy, index) => {
+        enemy.y += enemy.speed;
+        enemy.element.style.top = `calc(${enemy.y}% - 4vmin)`;
+
+        if(enemy.y > 100) {
+            health -= 10;
+            document.getElementById('health').textContent = health;
+            enemy.element.remove();
+            enemies.splice(index, 1);
+            checkGameOver();
+        }
+
+        bullets.forEach((bullet, bIndex) => {
+            const dx = Math.abs(bullet.x - enemy.x);
+            const dy = Math.abs(bullet.y - enemy.y);
+            if(dx < 5 && dy < 5) {
+                score += 100;
+                document.getElementById('score').textContent = score;
+                enemy.element.remove();
+                bullets[bIndex].element.remove();
+                enemies.splice(index, 1);
+                bullets.splice(bIndex, 1);
+            }
+        });
+    });
+
+    // 敌人生成
+    if(Math.random() < 0.02) spawnEnemy();
+
+    requestAnimationFrame(gameLoop);
+}
+
+function checkGameOver() {
+    if(health <= 0) {
+        alert(`游戏结束！得分: ${score}`);
+        location.reload();
+    }
+}
+
+// 初始化游戏
+function initGame() {
+    const loading = document.getElementById('loading');
+    loading.style.display = 'flex';
+    
+    setTimeout(() => {
+        loading.style.display = 'none';
+        document.getElementById('ad').style.display = 'block';
+        startGame();
+    }, 2000);
+}
+
+function startGame() {
+    score = 0;
+    health = 100;
+    document.getElementById('health').textContent = health;
+    document.getElementById('score').textContent = score;
+    updatePlayer();
+    gameLoop();
+}
+
+initGame();
+</script>
+</body>
+</html>
